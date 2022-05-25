@@ -1,3 +1,3 @@
 //web: npm start
 
-yarn start
+worker: yarn start
