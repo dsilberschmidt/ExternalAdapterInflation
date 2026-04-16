@@ -1,157 +1,197 @@
-# Chainlink NodeJS External Adapter Template
+# ExternalAdapterInflation
 
-This template provides a basic framework for developing Chainlink external adapters in NodeJS. Comments are included to assist with development and testing of the external adapter. Once the API-specific values (like query parameters and API key authentication) have been added to the adapter, it is very easy to add some tests to verify that the data will be correctly formatted when returned to the Chainlink node. There is no need to use any additional frameworks or to run a Chainlink node in order to test the adapter.
+Custom Chainlink external adapter for computing accumulated U.S. dollar inflation from a historical start date.
 
-## Creating your own adapter from this template
+This repository was built as part of **“Oracle for an historical stable coin”**, a prototype submitted to the **Chainlink Spring 2022 Hackathon**.
 
-Clone this repo and change "ExternalAdapterProject" below to the name of your project
+## Overview
 
-```bash
-git clone https://github.com/thodges-gh/CL-EA-NodeJS-Template.git ExternalAdapterProject
-```
+Most oracle examples return a spot price or a single data point. This adapter follows a different pattern: it receives a historical `start_date`, queries a public inflation dataset, aggregates the returned series from that date onward, and returns a single accumulated value that can be consumed by a smart contract.
 
-Enter into the newly-created directory
+The broader question behind the project was simple: can a smart contract reason about value across time, not just price at a point in time?
 
-```bash
-cd ExternalAdapterProject
-```
+## What this adapter does
 
-You can remove the existing git history by running:
+The adapter:
+1. receives a request containing a historical start date
+2. queries the Nasdaq Data Link dataset `RATEINF/INFLATION_USA`
+3. extracts the inflation series returned by the dataset
+4. computes a cumulative value across the returned observations
+5. returns the result in `data.result` in a Chainlink-compatible response
 
-```bash
-rm -rf .git
-```
+## Input
 
-See [Install Locally](#install-locally) for a quickstart
+The adapter expects a JSON request body like this:
 
-## Input Params
+    {
+      "id": "1",
+      "data": {
+        "start_date": "2020-01-01"
+      }
+    }
 
-- `base`, `from`, or `coin`: The symbol of the currency to query
-- `quote`, `to`, or `market`: The symbol of the currency to convert to
+Accepted aliases for the main input field:
+- `start_date`
+- `from`
+- `start`
+
+Optional field:
+- `endpoint` — defaults to `data.json`
 
 ## Output
 
-```json
-{
- "jobRunID": "278c97ffadb54a5bbb93cfec5f7b5503",
- "data": {
-  "USD": 164.02,
-  "result": 164.02
- },
- "statusCode": 200
-}
-```
+A successful response follows the usual Chainlink external adapter structure:
 
-## Install Locally
+    {
+      "jobRunID": "1",
+      "data": {
+        "result": 1.1234
+      },
+      "result": 1.1234,
+      "statusCode": 200
+    }
+
+## Important note on the returned value
+
+The current implementation computes the cumulative product:
+
+    Π (1 + monthly_value / 100 / 12)
+
+So the returned value is currently closer to an accumulation factor than to a final human-formatted inflation percentage.
+
+That means:
+- `1.00` corresponds roughly to no cumulative change
+- `1.10` corresponds roughly to a 10% accumulated factor
+- the code, as it stands, does not subtract 1 at the end
+
+This matters because the adapter is returning the internal computed value used by the prototype, not a polished end-user presentation layer.
+
+## Data source
+
+The adapter queries:
+- **Nasdaq Data Link**
+- dataset: `RATEINF/INFLATION_USA`
+
+The API key is expected in the environment as:
+- `API_KEY`
+
+## How the calculation works
+
+In the current version, the adapter takes the second element of each returned data row (`x[1]`) and computes:
+
+    response.data.dataset_data.data
+      .map(x => x[1])
+      .reduce((p, c) => p * (1 + c / 100 / 12), 1)
+
+This reflects the original prototype logic and is preserved here as a historical artifact of the project.
+
+## Repository structure
+
+- `index.js` — core adapter logic, request validation, Nasdaq query, cumulative calculation, Chainlink response formatting
+- `app.js` — Express wrapper exposing the adapter over HTTP
+- `test/` — test scaffolding
+- `Dockerfile` — Docker image definition
+- `Procfile` — Heroku process definition
+- `notes.md` — local notes and example requests from development
+
+## Local development
 
 Install dependencies:
 
-```bash
-yarn
-```
+    yarn
 
-### Test
+Run tests:
 
-Run the local tests:
+    yarn test
 
-```bash
-yarn test
-```
+Run locally:
 
-Natively run the application (defaults to port 8080):
+    yarn start
 
-### Run
+By default, the service listens on:
+- `PORT`, if provided
+- otherwise `8080`
 
-```bash
-yarn start
-```
+## Example local call
 
-## Call the external adapter/API server
+    curl -X POST \
+      -H "content-type: application/json" \
+      "http://localhost:8080/" \
+      --data '{
+        "id": "1",
+        "data": {
+          "start_date": "2020-01-01"
+        }
+      }'
 
-```bash
-curl -X POST -H "content-type:application/json" "http://localhost:8080/" --data '{ "id": 0, "data": { "from": "ETH", "to": "USD" } }'
-```
+You can also use the accepted aliases:
+
+    curl -X POST \
+      -H "content-type: application/json" \
+      "http://localhost:8080/" \
+      --data '{
+        "id": "1",
+        "data": {
+          "from": "2020-01-01"
+        }
+      }'
 
 ## Docker
 
-If you wish to use Docker to run the adapter, you can build the image by running the following command:
+Build the image:
 
-```bash
-docker build . -t external-adapter
-```
+    docker build . -t external-adapter-inflation
 
-Then run it with:
+Run it:
 
-```bash
-docker run -p 8080:8080 -it external-adapter:latest
-```
+    docker run -p 8080:8080 \
+      -e API_KEY=your_nasdaq_api_key \
+      external-adapter-inflation
 
-## Serverless hosts
+## Deployment notes
 
-After [installing locally](#install-locally):
+This repository reflects an earlier prototype stack and includes deployment artifacts from that period:
+- `Procfile` for Heroku-style deployment
+- `Dockerfile` for containerized execution
+- AWS/GCP wrapper exports in `index.js`
 
-### Create the zip
+Because of that, it should be understood as a historical prototype, not as a production-ready service.
 
-```bash
-zip -r external-adapter.zip .
-```
+## Relationship to the smart contract repo
 
-### Install to AWS Lambda
+This adapter was designed to work with the companion smart-contract repository:
+- `hsc`: https://github.com/dsilberschmidt/hsc
 
-- In Lambda Functions, create function
-- On the Create function page:
-  - Give the function a name
-  - Use Node.js 12.x for the runtime
-  - Choose an existing role or create a new one
-  - Click Create Function
-- Under Function code, select "Upload a .zip file" from the Code entry type drop-down
-- Click Upload and select the `external-adapter.zip` file
-- Handler:
-    - index.handler for REST API Gateways
-    - index.handlerv2 for HTTP API Gateways
-- Add the environment variable (repeat for all environment variables):
-  - Key: API_KEY
-  - Value: Your_API_key
-- Save
+In the full prototype flow:
 
-#### To Set Up an API Gateway (HTTP API)
+    smart contract → Chainlink node → this external adapter → Nasdaq dataset → accumulated inflation result → on-chain storage
 
-If using a HTTP API Gateway, Lambda's built-in Test will fail, but you will be able to externally call the function successfully.
+## Project context
 
-- Click Add Trigger
-- Select API Gateway in Trigger configuration
-- Under API, click Create an API
-- Choose HTTP API
-- Select the security for the API
-- Click Add
+This adapter was part of a broader experiment around a possible historical stable coin: a system where smart contracts could use inflation-aware logic anchored to a selectable historical date.
 
-#### To Set Up an API Gateway (REST API)
+Public hackathon submission:
+- https://devpost.com/software/oracle-for-an-historical-stable-coin
 
-If using a REST API Gateway, you will need to disable the Lambda proxy integration for Lambda-based adapter to function.
+## Current status
 
-- Click Add Trigger
-- Select API Gateway in Trigger configuration
-- Under API, click Create an API
-- Choose REST API
-- Select the security for the API
-- Click Add
-- Click the API Gateway trigger
-- Click the name of the trigger (this is a link, a new window opens)
-- Click Integration Request
-- Uncheck Use Lamba Proxy integration
-- Click OK on the two dialogs
-- Return to your function
-- Remove the API Gateway and Save
-- Click Add Trigger and use the same API Gateway
-- Select the deployment stage and security
-- Click Add
+This repository is preserved as a public prototype.
 
-### Install to GCP
+It still has several traits of a hackathon / research build:
+- template metadata remains in `package.json`
+- the repository originally inherited the Chainlink adapter template
+- the calculation is functional but only lightly documented in code
+- the deployment assumptions are tied to an older Chainlink/Heroku era
 
-- In Functions, create a new function, choose to ZIP upload
-- Click Browse and select the `external-adapter.zip` file
-- Select a Storage Bucket to keep the zip in
-- Function to execute: gcpservice
-- Click More, Add variable (repeat for all environment variables)
-  - NAME: API_KEY
-  - VALUE: Your_API_key
+## Cleanup opportunities
+
+Reasonable future cleanup would include:
+- replacing template package metadata
+- adding a proper `.env.example`
+- documenting the exact semantics of the returned result more formally
+- adding stronger tests for the cumulative calculation
+- updating the stack for current deployment targets
+
+## Author
+
+Daniel Silberschmidt
