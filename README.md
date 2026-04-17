@@ -194,4 +194,4 @@ Reasonable future cleanup would include:
 
 ## Author
 
-Daniel Silberschmidt
+dsilberschmidt

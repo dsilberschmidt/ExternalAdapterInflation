@@ -1,24 +1,31 @@
-curl -X POST -H "content-type:application/json" "http://localhost:8080/" --data '{"id": 0, "data": { "from": "ETH", "to": "USD"}}'
+# Notes
 
-https://min-api.cryptocompare.com/
+## Nasdaq dataset used
 
-https://min-api.cryptocompare.com/data/price?fsym=ETH&tsyms=USD
+https://data.nasdaq.com/api/v3/datasets/RATEINF/INFLATION_USA/data.json?start_date=2020-01-01&api_key=YOUR_API_KEY
 
-endpoint='price'
-fsym='ETH'
-tsyms='USD'
+Main parameters used:
+- `endpoint='data.json'`
+- `start_date='2020-01-01'`
 
-https://data.nasdaq.com/api/v3/datasets/RATEINF/INFLATION_USA/data.json?start_date=2020-01-01&api_key=GYBUGS41xf-9zH8fAuyu
+## Local test
 
-endpoint='data.json'
-start_date='2020-01-01'
-api_key='GYBUGS41xf-9zH8fAuyu'
+    curl -X POST -H "content-type:application/json" "http://localhost:8080/" --data '{"id": 0, "data": { "start_date": "2020-01-01"}}'
 
+## Historical Heroku deployment
 
-"content-type:application:JSON
+Historical deployed endpoint used during the prototype:
 
-curl -X POST -H "content-type:application/json" "http://localhost:8080/" --data '{"id": 0, "data": { "start_date": "2020-01-01"}}'
+    curl --silent -X POST -H "content-type:application/json" "https://evening-forest-80004.herokuapp.com" --data '{"id": 0, "data": { "start_date": "2005-01-01"}}' | jq -r .result
 
-https://vast-plateau-14345.herokuapp.com/
+Expected example result from that period:
 
-curl -X POST -H "content-type:application/json" "https://vast-plateau-14345.herokuapp.com/" --data '{"id": 0, "data": { "start_date": "2020-01-01"}}'
+    1.480891171443743
+
+## Current status of the data source
+
+The adapter starts and handles requests locally, but live requests to Nasdaq Data Link are currently blocked from this environment by Nasdaq's security layer (Incapsula / Access Denied / Error 15).
+
+This means the adapter logic itself can still be inspected and run locally, but live retrieval from the historical source may fail independently of the adapter code.
+
+For repository purposes, this project should be treated as a historical prototype with a currently blocked external data source.
