@@ -1,6 +1,6 @@
 # ExternalAdapterInflation
 
-Custom Chainlink external adapter for computing accumulated U.S. dollar inflation from a historical start date.
+Chainlink external adapter for computing accumulated U.S. dollar inflation from a historical start date.
 
 This repository was built as part of **“Oracle for an historical stable coin”**, a prototype submitted to the **Chainlink Spring 2022 Hackathon**.
 
@@ -8,11 +8,14 @@ This repository was built as part of **“Oracle for an historical stable coin�
 
 Most oracle examples return a spot price or a single data point. This adapter follows a different pattern: it receives a historical `start_date`, queries a public inflation dataset, aggregates the returned series from that date onward, and returns a single accumulated value that can be consumed by a smart contract.
 
-The broader question behind the project was simple: can a smart contract reason about value across time, not just price at a point in time?
+The broader question behind the project was simple:
+
+> Can a smart contract reason about value across time, not just price at a point in time?
 
 ## What this adapter does
 
 The adapter:
+
 1. receives a request containing a historical start date
 2. queries the Nasdaq Data Link dataset `RATEINF/INFLATION_USA`
 3. extracts the inflation series returned by the dataset
@@ -31,11 +34,13 @@ The adapter expects a JSON request body like this:
     }
 
 Accepted aliases for the main input field:
+
 - `start_date`
 - `from`
 - `start`
 
 Optional field:
+
 - `endpoint` — defaults to `data.json`
 
 ## Output
@@ -57,9 +62,10 @@ The current implementation computes the cumulative product:
 
     Π (1 + monthly_value / 100 / 12)
 
-So the returned value is currently closer to an accumulation factor than to a final human-formatted inflation percentage.
+So the returned value is closer to an accumulation factor than to a final human-formatted inflation percentage.
 
 That means:
+
 - `1.00` corresponds roughly to no cumulative change
 - `1.10` corresponds roughly to a 10% accumulated factor
 - the code, as it stands, does not subtract 1 at the end
@@ -69,10 +75,12 @@ This matters because the adapter is returning the internal computed value used b
 ## Data source
 
 The adapter queries:
+
 - **Nasdaq Data Link**
 - dataset: `RATEINF/INFLATION_USA`
 
 The API key is expected in the environment as:
+
 - `API_KEY`
 
 ## How the calculation works
@@ -89,10 +97,10 @@ This reflects the original prototype logic and is preserved here as a historical
 
 - `index.js` — core adapter logic, request validation, Nasdaq query, cumulative calculation, Chainlink response formatting
 - `app.js` — Express wrapper exposing the adapter over HTTP
-- `test/` — test scaffolding
 - `Dockerfile` — Docker image definition
 - `Procfile` — Heroku process definition
-- `notes.md` — local notes and example requests from development
+- `notes.md` — development notes and usage examples
+- `docs/history/heroku-debugging.md` — preserved debugging notes from the original Heroku deployment phase
 
 ## Local development
 
@@ -100,22 +108,19 @@ Install dependencies:
 
     yarn
 
-Run tests:
-
-    yarn test
-
 Run locally:
 
     yarn start
 
 By default, the service listens on:
+
 - `PORT`, if provided
 - otherwise `8080`
 
 ## Example local call
 
     curl -X POST \
-      -H "content-type: application/json" \
+      -H "content-type:application/json" \
       "http://localhost:8080/" \
       --data '{
         "id": "1",
@@ -127,7 +132,7 @@ By default, the service listens on:
 You can also use the accepted aliases:
 
     curl -X POST \
-      -H "content-type: application/json" \
+      -H "content-type:application/json" \
       "http://localhost:8080/" \
       --data '{
         "id": "1",
@@ -148,18 +153,10 @@ Run it:
       -e API_KEY=your_nasdaq_api_key \
       external-adapter-inflation
 
-## Deployment notes
-
-This repository reflects an earlier prototype stack and includes deployment artifacts from that period:
-- `Procfile` for Heroku-style deployment
-- `Dockerfile` for containerized execution
-- AWS/GCP wrapper exports in `index.js`
-
-Because of that, it should be understood as a historical prototype, not as a production-ready service.
-
 ## Relationship to the smart contract repo
 
 This adapter was designed to work with the companion smart-contract repository:
+
 - `hsc`: https://github.com/dsilberschmidt/hsc
 
 In the full prototype flow:
@@ -171,26 +168,31 @@ In the full prototype flow:
 This adapter was part of a broader experiment around a possible historical stable coin: a system where smart contracts could use inflation-aware logic anchored to a selectable historical date.
 
 Public hackathon submission:
+
 - https://devpost.com/software/oracle-for-an-historical-stable-coin
 
-## Current status
+## Current state
 
-This repository is preserved as a public prototype.
+This repository has been cleaned to preserve the actual adapter logic and remove leftover template material.
 
-It still has several traits of a hackathon / research build:
-- template metadata remains in `package.json`
-- the repository originally inherited the Chainlink adapter template
-- the calculation is functional but only lightly documented in code
-- the deployment assumptions are tied to an older Chainlink/Heroku era
+It currently:
 
-## Cleanup opportunities
+- runs locally
+- preserves the original accumulated-inflation calculation logic
+- documents the historical Heroku deployment/debugging path
+- remains tied to the original prototype architecture
 
-Reasonable future cleanup would include:
-- replacing template package metadata
-- adding a proper `.env.example`
-- documenting the exact semantics of the returned result more formally
-- adding stronger tests for the cumulative calculation
-- updating the stack for current deployment targets
+It should be understood as a historical prototype, not as a production-ready service.
+
+## Current limitation
+
+At the time of this cleanup, live requests to the original Nasdaq Data Link endpoint are being blocked from the current environment by Nasdaq’s security layer (Incapsula / Access Denied / Error 15).
+
+That means the adapter code can still be inspected and run locally, but live retrieval from the historical source may fail independently of the adapter logic itself.
+
+## Historical note
+
+This repository is best understood as a preserved technical artifact from the 2022 prototype rather than as a maintained service. Its main value today is to document the external-adapter side of the Historical Stable Coin experiment.
 
 ## Author
 
