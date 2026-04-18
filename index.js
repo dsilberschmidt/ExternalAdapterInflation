@@ -1,61 +1,80 @@
 const { Requester, Validator } = require('@chainlink/external-adapter')
 
-// Define custom error scenarios for the API.
-// Return true for the adapter to retry.
 const customError = (data) => {
   if (data.Response === 'Error') return true
   return false
 }
 
-// Define custom parameters to be used by the adapter.
-// Extra parameters can be stated in the extra object,
-// with a Boolean value indicating whether or not they
-// should be required.
 const customParams = {
-  start_date: ['start_date','from','start'],
-  //base: ['base', 'from', 'coin'],
-  //quote: ['quote', 'to', 'market'],
-  endpoint: false
+  start_date: ['start_date', 'from', 'start']
+}
+
+const seriesId = 'CUUR0000SA0'
+const url = 'https://api.bls.gov/publicAPI/v2/timeseries/data/'
+
+const periodToMonth = (period) => {
+  const match = /^M(\d{2})$/.exec(period || '')
+  return match ? Number(match[1]) : null
+}
+
+const toSortableDate = (entry) => {
+  const month = periodToMonth(entry.period)
+  return `${entry.year}-${String(month).padStart(2, '0')}`
+}
+
+const computeAccumulatedFactor = (data, startDate) => {
+  const filtered = data
+    .filter(entry => periodToMonth(entry.period) !== null)
+    .map(entry => ({
+      date: toSortableDate(entry),
+      value: Number(entry.value)
+    }))
+    .filter(entry => !Number.isNaN(entry.value))
+    .sort((a, b) => a.date.localeCompare(b.date))
+
+  const startMonth = startDate.slice(0, 7)
+  const usable = filtered.filter(entry => entry.date >= startMonth)
+
+  if (usable.length === 0) {
+    throw new Error(`No BLS data available for start_date ${startDate}`)
+  }
+
+  const first = usable[0].value
+  const last = usable[usable.length - 1].value
+
+  if (!first || !last) {
+    throw new Error('Invalid CPI values returned by BLS')
+  }
+
+  return last / first
 }
 
 const createRequest = (input, callback) => {
-  // The Validator helps you validate the Chainlink request data
   const validator = new Validator(callback, input, customParams)
   const jobRunID = validator.validated.id
-  const endpoint = validator.validated.data.endpoint || 'data.json'
-  const url = `https://data.nasdaq.com/api/v3/datasets/RATEINF/INFLATION_USA/${endpoint}`
-  const start_date = validator.validated.data.start_date.toUpperCase()
-  const api_key = process.env.API_KEY;
+  const start_date = validator.validated.data.start_date
 
-  const params = {
-    start_date,
-    api_key
-  }
+  const startyear = start_date.slice(0, 4)
+  const endyear = String(new Date().getUTCFullYear())
 
-  // This is where you would add method and headers
-  // you can add method like GET or POST and add it to the config
-  // The default is GET requests
-  // method = 'get'
-  // headers = 'headers.....'
   const config = {
     url,
-    params
+    method: 'post',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    data: {
+      seriesid: [seriesId],
+      startyear,
+      endyear
+    }
   }
 
-  // The Requester allows API calls be retry in case of timeout
-  // or connection failure
   Requester.request(config, customError)
     .then(response => {
-      // It's common practice to store the desired value at the top-level
-      // result key. This allows different adapters to be compatible with
-      // one another.
-      //console.log("XXXXXXXX")
-      //console.log(response.data.dataset_data.data.map(x => x[1]).reduce( (p, c) => p *(1+ c/100/12), 1))
-      //console.log("XXXXXXXX")
-      reply = response.data.dataset_data.data.map(x => x[1]).reduce( (p, c) => p *(1+ c/100/12), 1)
-      //response.data.result = Requester.validateResultNumber(response.data, ['dataset_data', 'data',0,1])
+      const series = response.data.Results.series[0].data
+      const reply = computeAccumulatedFactor(series, start_date)
       response.data.result = reply
-
       callback(response.status, Requester.success(jobRunID, response))
     })
     .catch(error => {
@@ -63,24 +82,18 @@ const createRequest = (input, callback) => {
     })
 }
 
-// This is a wrapper to allow the function to work with
-// GCP Functions
 exports.gcpservice = (req, res) => {
   createRequest(req.body, (statusCode, data) => {
     res.status(statusCode).send(data)
   })
 }
 
-// This is a wrapper to allow the function to work with
-// AWS Lambda
 exports.handler = (event, context, callback) => {
   createRequest(event, (statusCode, data) => {
     callback(null, data)
   })
 }
 
-// This is a wrapper to allow the function to work with
-// newer AWS Lambda implementations
 exports.handlerv2 = (event, context, callback) => {
   createRequest(JSON.parse(event.body), (statusCode, data) => {
     callback(null, {
@@ -91,6 +104,4 @@ exports.handlerv2 = (event, context, callback) => {
   })
 }
 
-// This allows the function to be exported for testing
-// or for running in express
 module.exports.createRequest = createRequest
